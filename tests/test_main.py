@@ -103,3 +103,51 @@ def test_enforce_status_transitions():
     )
 
     assert second_update.status_code == 409
+
+def test_successful_is_terminal():
+    created = client.post(
+        "/operations",
+        json={"service_name": "payment-service", "failure_type": "health_check_failed"}
+    )
+    operation_id = created.json()["id"]
+
+    first_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "running"}
+    )
+    second_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "succeeded"}
+    )
+    third_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "failed"}
+    )
+
+    assert first_update.status_code == 200
+    assert second_update.status_code == 200
+    assert third_update.status_code == 409
+
+def test_failed_is_terminal():
+    created = client.post(
+        "/operations",
+        json={"service_name": "checkout-service", "failure_type": "health_check_failed"}
+    )
+    operation_id = created.json()["id"]
+
+    first_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "running"}
+    )
+    second_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "failed"}
+    )
+    third_update = client.patch(
+        f"/operations/{operation_id}",
+        json={"status": "succeeded"}
+    )
+
+    assert first_update.status_code == 200
+    assert second_update.status_code == 200
+    assert third_update.status_code == 409
