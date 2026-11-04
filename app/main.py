@@ -1,8 +1,10 @@
 from fastapi import FastAPI, status, HTTPException, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import uuid
 from typing import Literal
 from sqlalchemy.orm import Session
+from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_db
 from app import models
@@ -23,8 +25,6 @@ def health_check():
     return {"status": "ok"}
 
 
-
-
 class OperationCreate(BaseModel):
     service_name: str = Field(min_length=1, max_length=100)
     failure_type: str = Field(min_length=1, max_length=100)
@@ -35,12 +35,13 @@ class OperationResponse(BaseModel):
     service_name: str
     failure_type: str
     status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OperationStatusUpdate(BaseModel):
     status: Literal["pending", "running", "succeeded", "failed"]
-
-
 
 
 @app.post(
@@ -50,9 +51,17 @@ def create_operation(operation: OperationCreate, db: Session = Depends(get_db)):
     db_operation = models.Operation(
         service_name=operation.service_name, failure_type=operation.failure_type
     )
-    db.add(db_operation)
-    db.commit()
-    db.refresh(db_operation)
+    try:
+        db.add(db_operation)
+        db.commit()
+        db.refresh(db_operation)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error while creating operation",
+        )
+
     return db_operation
 
 
@@ -80,7 +89,7 @@ def update_operation(
     if operation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"operation {operation_id} does not exist!",
+            detail="Operation not found",
         )
 
     current_status = operation.status
@@ -97,5 +106,15 @@ def update_operation(
         )
 
     operation.status = requested_status
-    db.commit()
+
+    try:
+        db.commit()
+        db.refresh(operation)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error while updating operation",
+        )
+
     return operation
