@@ -6,14 +6,25 @@ from app import models
 from app.main import app
 import pytest
 from fastapi.testclient import TestClient
+from alembic import command
+from alembic.config import Config
 
 engine = create_engine(settings.TEST_DATABASE_URL, echo=True)
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-Base.metadata.create_all(bind=engine)
+
+
+@pytest.fixture(scope="session")
+def setup_test_database():
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.attributes["database_url"] = settings.TEST_DATABASE_URL
+
+    command.upgrade(alembic_cfg, "head")
+
+    yield
 
 
 @pytest.fixture()
-def db_session():
+def db_session(setup_test_database):
     connection = engine.connect()
     transaction = connection.begin()
     session = TestingSessionLocal(
