@@ -33,6 +33,10 @@ def test_invalid_creation(client):
     )
 
     assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert body["message"] == "Request validation failed"
+    assert len(body["details"]) > 0
 
 
 def test_retrieve_operation(client):
@@ -61,6 +65,7 @@ def test_retrieve_missing_operation(client):
     response = client.get("/operations/00000000-0000-0000-0000-000000000001")
 
     assert response.status_code == 404
+    assert response.json()["error"]["code"] == "OPERATION_NOT_FOUND"
 
 
 def test_list_operations(client):
@@ -104,6 +109,7 @@ def test_enforce_status_transitions(client):
     )
 
     assert second_update.status_code == 409
+    assert second_update.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
 
 
 def test_successful_is_terminal(client):
@@ -126,6 +132,7 @@ def test_successful_is_terminal(client):
     assert first_update.status_code == 200
     assert second_update.status_code == 200
     assert third_update.status_code == 409
+    assert third_update.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
 
 
 def test_failed_is_terminal(client):
@@ -151,6 +158,7 @@ def test_failed_is_terminal(client):
     assert first_update.status_code == 200
     assert second_update.status_code == 200
     assert third_update.status_code == 409
+    assert third_update.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
 
 
 def test_missing_required_field(client):
@@ -160,6 +168,11 @@ def test_missing_required_field(client):
     )
 
     assert response.status_code == 422
+
+    body = response.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert body["message"] == "Request validation failed"
+    assert any(error["field"] == "body.failure_type" for error in body["details"])
 
 
 def test_service_name_too_long(client):
@@ -172,6 +185,10 @@ def test_service_name_too_long(client):
     )
 
     assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert body["message"] == "Request validation failed"
+    assert len(body["details"]) > 0
 
 
 def test_invalid_status_value(client):
@@ -192,6 +209,10 @@ def test_invalid_status_value(client):
 
     assert response.status_code == 422
 
+    body = response.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert any(error["field"] == "body.status" for error in body["details"])
+
 
 def test_update_missing_operation(client):
     response = client.patch(
@@ -200,7 +221,8 @@ def test_update_missing_operation(client):
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Operation not found"
+    assert response.json()["error"]["code"] == "OPERATION_NOT_FOUND"
+    assert response.json()["error"]["message"] == "Operation not found"
 
 
 def test_database_error_during_creation(client):
@@ -212,6 +234,8 @@ def test_database_error_during_creation(client):
                 "failure_type": "health_check_failed",
             },
         )
-
     assert response.status_code == 500
-    assert response.json()["detail"] == "Database error while creating operation"
+    assert response.json()["error"]["code"] == "INTERNAL_SERVER_ERROR"
+    assert (
+        response.json()["error"]["message"] == "Database error while creating operation"
+    )

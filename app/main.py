@@ -2,7 +2,9 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Literal
-from fastapi import FastAPI, status, HTTPException, Depends
+from fastapi import FastAPI, status, HTTPException, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 
 from sqlalchemy.orm import Session
@@ -28,6 +30,49 @@ ALLOWED_TRANSITIONS = {
 }
 
 app = FastAPI(title="Recovery Operations API")
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_codes = {
+        404: "OPERATION_NOT_FOUND",
+        409: "INVALID_STATE_TRANSITION",
+        500: "INTERNAL_SERVER_ERROR",
+    }
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": error_codes.get(exc.status_code, "HTTP_ERROR"),
+                "message": exc.detail,
+            }
+        },
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = [
+        {
+            "field": ".".join(str(part) for part in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+        }
+        for error in exc.errors()
+    ]
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed",
+                "details": errors,
+            }
+        },
+    )
 
 
 @app.get("/health")
