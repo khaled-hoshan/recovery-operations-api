@@ -1,13 +1,23 @@
+import logging
+import uuid
+from datetime import datetime
+from typing import Literal
 from fastapi import FastAPI, status, HTTPException, Depends
 from pydantic import BaseModel, Field, ConfigDict
-import uuid
-from typing import Literal
+
 from sqlalchemy.orm import Session
-from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_db
 from app import models
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 
 ALLOWED_TRANSITIONS = {
@@ -55,7 +65,15 @@ def create_operation(operation: OperationCreate, db: Session = Depends(get_db)):
         db.add(db_operation)
         db.commit()
         db.refresh(db_operation)
-    except SQLAlchemyError:
+        logger.info(
+            "operation_created operation_id=%s",
+            db_operation.id,
+        )
+    except SQLAlchemyError as exc:
+        logger.error(
+            "database_operation_failed event=create_operation error_type=%s",
+            type(exc).__name__,
+        )
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -97,6 +115,12 @@ def update_operation(
 
     allowed_next = ALLOWED_TRANSITIONS.get(current_status, [])
     if requested_status not in allowed_next:
+        logger.warning(
+            "operation_transition_rejected operation_id=%s from=%s to=%s",
+            operation_id,
+            current_status,
+            requested_status,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -110,7 +134,17 @@ def update_operation(
     try:
         db.commit()
         db.refresh(operation)
-    except SQLAlchemyError:
+        logger.info(
+            "operation_status_changed operation_id=%s from=%s to=%s",
+            operation_id,
+            current_status,
+            requested_status,
+        )
+    except SQLAlchemyError as exc:
+        logger.error(
+            "database_operation_failed event=update_operation error_type=%s",
+            type(exc).__name__,
+        )
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
