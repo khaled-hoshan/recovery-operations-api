@@ -1,0 +1,53 @@
+name: Neon Database Migration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          url = os.environ["DATABASE_URL"]
+
+          if url.startswith("postgresql://"):
+              url = url.replace(
+                  "postgresql://",
+                  "postgresql+psycopg://",
+                  1,
+              )
+
+          env = os.environ.copy()
+          env["DATABASE_URL"] = url
+
+          subprocess.run(
+              [sys.executable, "-m", "alembic", "upgrade", "head"],
+              env=env,
+              check=True,
+          )
+          PY
